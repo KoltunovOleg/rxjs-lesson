@@ -1,17 +1,43 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="X-UA-Compatible" content="ie=edge">
-  <title>Document</title>
-</head>
-<body>
-  <input type="text" id="refInput">
-  <div class="wrapper">
-    
-  </div>
 
-  <button>Click me </button>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Document</title>
+</head>
+
+<body>
+
+    <style>
+        .card,
+        .wrapper {
+            float: left;
+            width: 50%;
+        }
+        
+        .pagination li,
+        .pagination button,
+        .list li {
+            cursor: pointer;
+        }
+    </style>
+    <div class="filter">
+        <input type="text" id="searchInput">
+        <label for="male">
+        <input type="checkbox" name="gender" id="male" value="male">
+        Male
+      </label>
+        <label for="female">
+        <input type="checkbox" name="gender" id="female" value="female">
+        Female
+      </label>
+    </div>
+    <div class="wrapper">
+
+    </div>
+    <div class="card"></div>
 </body>
+
 </html>

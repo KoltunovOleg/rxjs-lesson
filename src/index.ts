@@ -1,215 +1,318 @@
-import { from, fromEvent, Observable, of, combineLatest, interval, timer} from 'rxjs';
-import { map, catchError, debounceTime, switchMap, delay, find, scan, filter, pluck, skip, startWith, take, takeLast, throttle} from 'rxjs/operators';
+import { from, fromEvent, Observable, of, interval, timer, merge,  concat} from 'rxjs';
+import { map, 
+  catchError, 
+  debounceTime, 
+  switchMap, 
+  delay, 
+  find, 
+  scan, 
+  filter, 
+  pluck, 
+  skip, 
+  startWith, 
+  take, 
+  takeLast, 
+  throttle, 
+  concatAll,
+  combineLatest
+} from 'rxjs/operators';
 
-const inputElement: HTMLInputElement = document.querySelector('#refInput') as HTMLInputElement;
+const url: string = "https://rickandmortyapi.com/api/character";
+
+const inputElement: HTMLInputElement = document.querySelector('#searchInput') as HTMLInputElement;
+const checkboxElement1: HTMLElement = document.querySelector('#male') as HTMLElement;
+const checkboxElement2: HTMLInputElement = document.querySelector('#female') as HTMLInputElement;
+
+type IStreamOptions = { 
+  'streamType': string,
+  'streamValue': string | object,
+  'sreamState'?: string
+}
 
 
-type IRepo =  { name: string, owner: { repos_url: string } }
-type IGithubRepos = { items: IRepo[] }
-
-
-const source1$: Observable<any> = fromEvent(inputElement, 'click').pipe(
-  throttle(x => interval(3000))
+// Input's Observable
+const source1$: Observable<any> = fromEvent(inputElement, 'input').pipe(
+  map((event: Event) => {
+    const item: IStreamOptions = {
+      'streamType': (event.target as any).type,
+      'streamValue': (event.target as any).value
+    };
+    return item;
+  }),
+  debounceTime(500)
 );
 
-source1$.subscribe(data => console.log('double click'))
+// #male Checkbox's Observable
+const source2$: Observable<any> = fromEvent(checkboxElement1, 'click').pipe(
+  map((event: Event) => {
+    const item: IStreamOptions = {
+      'streamType': (event.target as any).type,
+      'streamValue': (event.target as any).value,
+      'sreamState': (event.target as any).checked
+    };
+    return item;
+  }),
+);
+
+// #female Checkbox's Observable
+const source3$: Observable<any> = fromEvent(checkboxElement2, 'click').pipe(
+  map((event: Event) => {
+    const item: IStreamOptions = {
+      'streamType': (event.target as any).type,
+      'streamValue': (event.target as any).value,
+      'sreamState': (event.target as any).checked
+    };
+    return item;
+  }),
+);
+
+// Cteation dinamic elements
+const wrapperElement: HTMLElement = document.querySelector('.wrapper') as HTMLElement;
+const listElement: HTMLElement = document.createElement('ul');
+
+const pagination: HTMLElement = document.createElement('div');
+const paginationList: HTMLElement = document.createElement('ul');
+listElement.className = "list";
+pagination.className = "pagination";
+
+const paginationNext: HTMLElement = document.createElement('button');
+paginationNext.innerHTML = "Next";
+paginationNext.className = "next";
+
+const paginationPrev: HTMLElement = document.createElement('button');
+paginationPrev.innerHTML = "Prev";
+paginationPrev.className = "prev";
 
 
+wrapperElement.appendChild(listElement);
+wrapperElement.appendChild(pagination);
 
 
-const source$: Observable<IGithubRepos> = fromEvent(inputElement, 'input').pipe(
-  map((event: Event) => (event.target as any).value),
-  debounceTime(500),
-  switchMap((value: string) => {
-    console.log(value)
+const pagination$: Observable<any> = fromEvent(pagination, 'click').pipe(
+  map((event: Event) => {
+    const tegname: string = (event.target as any).tagName;
+    if(tegname === "LI" || tegname === "BUTTON") {
+      return (event.target as any).innerHTML;
+    }
+  })
+);
+
+
+// Filter's Observable
+const filter$: Observable<any> = source1$.pipe(startWith(0)).pipe(combineLatest(
+  source2$.pipe(startWith(0)),
+  source3$.pipe(startWith(0))
+))
+
+let endpoint$: Observable<any> =  filter$.pipe(
+  switchMap((value: any) => {
+        let pointURL: string = "";
+        const name: string = value[0]['streamValue'];
+        const male: string = value[1]['streamValue'];
+        const female: string = value[2]['streamValue'];
+        const maleChecked: string = value[1]['sreamState'];
+        const femaleChecked: string = value[2]['sreamState'];
+          if(name) {
+            pointURL = "?name=" + name;
+          }
+
+          if(maleChecked && !femaleChecked && name) {
+            pointURL = pointURL + "&gender=" + male;
+          } else if (!maleChecked && femaleChecked && name) {
+            pointURL = pointURL + "&gender=" + female;
+          } else if (maleChecked && !femaleChecked && !name) {
+            pointURL = "?gender=" + male;
+          } else if (!maleChecked && femaleChecked && !name) {
+            pointURL = "?gender=" + female;
+          }
+        if(!pointURL) {
+        return from(
+          fetch(url)
+          .then((res: Response) => res.json())
+          .then((res: any) => {
+            return [res,url];
+          })
+          .catch((err) => console.log(err))
+        )
+      } else {
+        return from(
+          fetch(url+pointURL)
+          .then((res: Response) => res.json())
+          .then((res: any) => {
+            return [res, url+pointURL];
+          })
+          .catch((err) => console.log(err))
+        )
+      }
+    }),
+    catchError((err: Error, caught: any) => {
+      return of(err)
+    })
+);
+
+
+// Get page info
+let renderList: any = "";
+const getPage$: Observable<any> = merge(
+  endpoint$,
+  pagination$.pipe(startWith(""))
+).pipe(
+  switchMap((value: any) => {
+    let page: string = '';
+
+    if(value && value == "Next" && renderList[0].info.next) {
+      page = value;
+      return from(
+        fetch(renderList[0].info.next)
+        .then((res: Response) => res.json())
+        .then((res: any) => {
+          renderList = [res, renderList[1]];
+          return res;
+        })
+        .catch((err) => console.log(err))
+      );
+    } else  if(value && value == "Prev" && renderList[0].info.prev) {
+      page = value;
+      return from(
+        fetch(renderList[0].info.prev)
+        .then((res: Response) => res.json())
+        .then((res: any) => {
+          renderList = [res, renderList[1]];
+          return res;
+        })
+        .catch((err) => console.log(err))
+      );
+    } else if(value && typeof value === "string") {
+      const endCurrentUrl = renderList[1].substr(url.length+1);
+      const nextUrl = url + "/?page=" + value + "&" + endCurrentUrl;
+      return from(
+        fetch(nextUrl)
+        .then((res: Response) => res.json())
+        .then((res: any) => {
+          renderList = [res, renderList[1]];
+          return res;
+        })
+        .catch((err) => console.log(err))
+      );
+    }else if (value && typeof value === "object") {
+      renderList = value;
+      return of(value[0]);
+    } else {
+      return of(renderList[0]);
+    }
+  })
+);
+
+
+getPage$.subscribe((val: any) => {
+  listElement.innerHTML = '';
+
+  if(!val) {
+    listElement.innerHTML = 'Loading...'
+  }else if(val && !val.error) {
+      val.results.forEach((item: any) => {
+        const li: HTMLElement = document.createElement('li');
+        li.innerHTML = item.name;
+        listElement.appendChild(li)
+      })
+    } else if (val.error) {
+      listElement.innerHTML = 'Try other name';
+    }
+  },
+  (err: Error) => {
+    console.log(err);
+  }
+);
+
+// Render pagination
+//
+getPage$.subscribe((val:any) => {
+  let pageAmount:number = 0;
+  
+  if ( val && !val.error) {
+    pageAmount = val.info.pages;
+  }
+
+  if(pageAmount > 1 ) {
+    const pageInfo: any = val.info;
+    pagination.appendChild(paginationPrev);
+    pagination.appendChild(paginationList);
+    pagination.appendChild(paginationNext);
+    FillPaginationList (pageAmount, pageInfo);
+  } else {
+    pagination.innerHTML = '';
+  }
+});
+
+
+function FillPaginationList (pages:number, pageInfo: any) {
+  let prev: number;
+  if(pageInfo.prev) {
+    prev = Number(pageInfo.prev.match(/\d+/g).join(""));
+  } else {
+    prev = 1;
+  }
+  paginationList.innerHTML = '';
+  for (let i = prev; i <= pages; i++) {
+    const li: HTMLElement = document.createElement('li');
+    li.innerHTML = `${i}`;
+    paginationList.appendChild(li);
+    if(i >= prev+2) {
+      break;
+    }
+  }
+}
+
+
+//
+const card: HTMLElement = document.querySelector('.card') as HTMLElement;
+const heroName: HTMLElement = document.createElement('div');
+const heroUrl: HTMLElement = document.createElement('div');
+const heroType: HTMLElement = document.createElement('div');
+const heroDimension: HTMLElement = document.createElement('div');
+
+const getHeroCard$: Observable<any> = fromEvent(listElement, 'click').pipe(
+  map((event: Event) => (event.target as any).innerHTML),
+  switchMap((value: any) => {
     return from(
-      fetch(`https://api.github.com/search/repositories?q=${value}`)
+      fetch(url+"/?name="+ value)
       .then((res: Response) => res.json())
+      .then((res: any) => {
+        return res;
+      })
       .catch((err) => console.log(err))
     )
-  }),
-  catchError((err: Error, caught: any) => {
-    return of(err)
   })
 );
 
-source$.subscribe((repo: IGithubRepos) => {
-  const wrapperElement: HTMLInputElement = document.querySelector('.wrapper') as HTMLInputElement;
-  wrapperElement.innerHTML = '';
+getHeroCard$.subscribe((val:any) => {
+  card.innerHTML = '';
 
-  repo.items.forEach((item: IRepo) => {
-    const a: HTMLAnchorElement = document.createElement('a');
-    a.innerHTML = item.name;
-    a.setAttribute('href', item.owner.repos_url)
-    wrapperElement.appendChild(a)
+  card.appendChild(heroName);
+  card.appendChild(heroUrl);
+  card.appendChild(heroType);
+  card.appendChild(heroDimension);
+
+  val.results.forEach((item:any) => {
+    heroName.innerHTML= item.name;
+    heroUrl.innerHTML="Hero url: "+ item.url;
+    heroType.innerHTML="Hero type: "+ item.type;
+    heroDimension.innerHTML="Hero dimension: "+ item.location.name;
+    if(item.episode) {
+      getEposodes(item.episode);
+    }
   })
-},
-  (err: Error) => {
-    console.log(err)
-  }
-)
-
-const a$: Observable<number> = of(1, 2).pipe(
-  delay(2000)
-);
-const b$: Observable<number> = of(2);
-const d$: Observable<number> = of(4);
-
-const array$ = [ a$, b$, d$,];
 
 
-const c$: Observable<number> = combineLatest(
-  ...array$,
-  (a: number, b: number, d: number) => a + b + d
-)
+});
 
-c$.subscribe((c: number) => console.log(c))
-
-
-// interval(1000).pipe(
-//   map(() => new Date())
-// ).subscribe((date: Date) => {
-//   console.log(date)
-// })
-
-
-
-const id: number = 1;
-const item$: Observable<number> = from([1, 2, 3, 4])
-
-
-item$.pipe(
-  find((value: number, index: number) => value === id )
-).subscribe(data => console.log(data))
-
-
-item$.pipe(
-  takeLast(1),
-  startWith(20),
-  scan((acc: number, next: number) => acc + next, 0),
-  filter((value: number) => value > 5 ),
-  skip(1),
-  map((data: number) => ({ result: data })),
-  pluck('result'),
-).subscribe(data => console.log('sum', data))
-
-
-
-
-
-console.log('Common way', new Date())
-// const c: Observable<number> = a$.pipe(
-//   map((value: number) => )
-// )
-
-
-
-
-// source$.subscribe((value: Event) => {
-//   console.log('list2', value)
-// })
-
-
-// const subscription: Subscription = source$.subscribe((value: Event) => {
-//   console.log('list3', value)
-// })
-
-// subscription.unsubscribe()
-
-
-
-
-
-// old
-// source$.map(
-//   map((event: Event) => (event.target as any).value)
-// ).subscribe((value: string) => {
-//   console.log('value', value)
-// })
-
-
-
-// const sourse$ = from(['hello', 'worls']);
-
-
-// sourse$.subscribe((data: string) => {
-//   console.log(data)
-// })
-
-// interface IListener {
-//   update(msg: string): void
-// }
-
-// interface IObserver {
-//   add(listener: IListener): void;
-//   remove(listener: IListener): void;
-//   notify(msg: string, listener?: IListener[]): void;
-// }
-
-// class Observer implements IObserver {
-//   private _listeners: IListener[] = [];
-
-//   public add(listener: IListener): void {
-//     this._listeners.push(listener)
-//   }
-
-//   public remove(listener: IListener): void {
-//     const index: number = this._listeners.indexOf(listener);
-//     this._listeners.splice(index, 1)
-//   }
-
-//   public notify(msg: string, listeners: IListener[]): void {
-//     if(listeners) {
-//       return this._notifyListeners(listeners, msg)
-//     }
-
-//     return this._notifyListeners(this._listeners, msg)
-//   }
-
-//   private _notifyListeners(listeners: IListener[], msg: string): void {
-//     listeners.forEach((listener: IListener) => {
-//       listener.update(msg);
-//     })
-//   }
-
-// }
-
-// const listener1: IListener = {
-//   update(msg: string) {
-//     console.log(`listener1 ${msg}`)
-//   }
-// }
-
-// const listener2: IListener = {
-//   update(msg: string) {
-//     console.log(`listener2 ${msg}`)
-//   }
-// }
-
-// const listener3: IListener = {
-//   update(msg: string) {
-//     console.log(`listener3 ${msg}`)
-//   }
-// }
-
-// const listener4: IListener = {
-//   update(msg: string) {
-//     console.log(`listener4 ${msg}`)
-//   }
-// }
-
-// const observer: IObserver = new Observer();
-// observer.add(listener1);
-// observer.add(listener2);
-// observer.add(listener3);
-// // observer.remove(listener1)
-// observer.add(listener4);
-
-// observer.notify('Hello world');
-// observer.notify('Hello Rxjs', [listener1]);
-
-
-
-
-
-
+function getEposodes(episodes: []) {
+  const heroEpisodes: HTMLElement = document.createElement('ul');
+  card.appendChild(heroEpisodes);
+  
+  episodes.forEach((item:string) => {
+    const heroEpisodeItem: HTMLElement = document.createElement('li');
+    heroEpisodeItem.innerHTML=item;
+    heroEpisodes.appendChild(heroEpisodeItem);
+  })
+}
